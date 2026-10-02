@@ -1,0 +1,65 @@
+// ==UserScript==
+// @name         巨潮资讯 PDF 直链打开 (支持港A股)
+// @namespace    http://tampermonkey.net/
+// @version      4.2
+// @updateURL https://raw.githubusercontent.com/你的用户名/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
+// @downloadURL https://raw.githubusercontent.com/你的用户名/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
+// @description  修复港股公告 announcementTime 含时间导致直链404的问题
+// @author       zh_zxc
+// @match        *://*.cninfo.com.cn/*
+// @icon         https://static.cninfo.com.cn/new/assets/image/logo.png
+// @grant        GM_openInTab
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    function buildPdfUrl(href) {
+        try {
+            const url = new URL(href, window.location.origin);
+            const announcementId = url.searchParams.get('announcementId');
+            let announcementTime = url.searchParams.get('announcementTime');
+
+            // 修复：港股 announcementTime 可能为 "YYYY-MM-DD HH:MM"，只取日期部分
+            if (announcementTime) {
+                announcementTime = announcementTime.split(' ')[0];
+            }
+
+            if (announcementId && announcementTime) {
+                return `https://static.cninfo.com.cn/finalpage/${announcementTime}/${announcementId}.PDF`;
+            }
+        } catch (e) {
+            console.log('[巨潮PDF直链] URL解析失败:', e);
+        }
+        return null;
+    }
+
+    // 场景一：列表页点击拦截
+    document.addEventListener('click', function(e) {
+        let target = e.target;
+        while (target && target.tagName !== 'A') {
+            target = target.parentElement;
+        }
+        if (!target) return;
+
+        const href = target.href;
+        if (!href || !href.includes('/new/disclosure/detail')) return;
+
+        const pdfUrl = buildPdfUrl(href);
+        if (pdfUrl) {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('[巨潮PDF直链] 点击拦截，打开:', pdfUrl);
+            GM_openInTab(pdfUrl, { active: true });
+        }
+    }, true);
+
+    // 场景二：直接打开详情页时自动跳转
+    if (window.location.pathname.includes('/new/disclosure/detail')) {
+        const pdfUrl = buildPdfUrl(window.location.href);
+        if (pdfUrl) {
+            console.log('[巨潮PDF直链] 详情页自动打开:', pdfUrl);
+            GM_openInTab(pdfUrl, { active: true });
+        }
+    }
+})();
