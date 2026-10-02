@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         巨潮资讯 PDF 直链打开 (支持港A股)
 // @namespace    http://tampermonkey.net/
-// @version      4.4.0
+// @version      4.5.0
 // @updateURL https://raw.githubusercontent.com/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
 // @downloadURL https://raw.githubusercontent.com/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
 // @description  PDF 直链打开和本地自选股
@@ -102,12 +102,13 @@
                 top: 72px;
                 right: 20px;
                 z-index: 2147483647;
-                width: 280px;
-                color: #1f2937;
-                background: #fff;
-                border: 1px solid #dbe3ef;
-                border-radius: 8px;
-                box-shadow: 0 6px 24px rgba(15, 23, 42, .16);
+                width: min(330px, calc(100vw - 32px));
+                overflow: hidden;
+                color: #172033;
+                background: #f8fafc;
+                border: 1px solid #dbe4f0;
+                border-radius: 14px;
+                box-shadow: 0 14px 40px rgba(15, 23, 42, .18), 0 2px 8px rgba(15, 23, 42, .06);
                 font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             }
             #cninfo-watchlist.is-collapsed .cninfo-watchlist-body { display: none; }
@@ -115,10 +116,9 @@
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                padding: 10px 12px;
+                padding: 13px 15px;
                 color: #fff;
-                background: #1677ff;
-                border-radius: 8px 8px 0 0;
+                background: linear-gradient(135deg, #1769e0, #2f8cff);
                 font-weight: 600;
                 cursor: grab;
                 user-select: none;
@@ -127,30 +127,38 @@
                 cursor: grabbing;
             }
             .cninfo-watchlist-header button {
-                padding: 0 4px;
+                width: 26px;
+                height: 26px;
                 color: #fff;
-                background: transparent;
-                border: 0;
+                background: rgba(255, 255, 255, .16);
+                border: 1px solid rgba(255, 255, 255, .25);
+                border-radius: 7px;
                 cursor: pointer;
                 font-size: 18px;
                 line-height: 1;
             }
-            .cninfo-watchlist-body { padding: 10px; }
-            .cninfo-watchlist-form { position: relative; display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
+            .cninfo-watchlist-body { padding: 12px; }
+            .cninfo-watchlist-form { position: relative; display: grid; grid-template-columns: 1fr 1fr auto; gap: 7px; }
             .cninfo-watchlist-form input, #cninfo-watchlist-filter {
                 box-sizing: border-box;
                 min-width: 0;
-                padding: 6px 8px;
-                border: 1px solid #cbd5e1;
-                border-radius: 4px;
+                padding: 8px 9px;
+                color: inherit;
+                background: #fff;
+                border: 1px solid #d5deea;
+                border-radius: 8px;
                 font: inherit;
+            }
+            .cninfo-watchlist-form input:focus, #cninfo-watchlist-filter:focus, .cninfo-watchlist-sort:focus {
+                outline: 2px solid rgba(47, 140, 255, .22);
+                border-color: #2f8cff;
             }
             .cninfo-watchlist-form button {
                 padding: 0 10px;
                 color: #fff;
-                background: #1677ff;
+                background: #1769e0;
                 border: 0;
-                border-radius: 4px;
+                border-radius: 8px;
                 cursor: pointer;
             }
             .cninfo-watchlist-form button:hover { background: #0958d9; }
@@ -165,8 +173,8 @@
                 padding: 4px 0;
                 overflow-y: auto;
                 background: #fff;
-                border: 1px solid #cbd5e1;
-                border-radius: 4px;
+                border: 1px solid #d5deea;
+                border-radius: 8px;
                 box-shadow: 0 4px 12px rgba(15, 23, 42, .14);
                 list-style: none;
             }
@@ -186,18 +194,31 @@
             }
             .cninfo-watchlist-suggestion:hover { background: #eff6ff; }
             .cninfo-watchlist-suggestion-code { color: #64748b; font-size: 12px; }
-            #cninfo-watchlist-filter { width: 100%; margin-top: 8px; }
+            .cninfo-watchlist-tools { display: flex; gap: 7px; margin-top: 10px; }
+            #cninfo-watchlist-filter { flex: 1; width: 0; margin: 0; }
+            .cninfo-watchlist-sort {
+                width: 105px;
+                padding: 8px 6px;
+                color: #334155;
+                background: #fff;
+                border: 1px solid #d5deea;
+                border-radius: 8px;
+                font: inherit;
+            }
             .cninfo-watchlist-message {
                 min-height: 20px;
-                margin: 5px 0 0;
+                margin: 5px 2px 0;
                 color: #cf1322;
                 font-size: 12px;
             }
             .cninfo-watchlist-items {
                 max-height: 260px;
-                margin: 2px 0 0;
-                padding: 0;
+                margin: 8px 0 0;
+                padding: 4px 6px;
                 overflow-y: auto;
+                background: #fff;
+                border: 1px solid #e2e8f0;
+                border-radius: 10px;
                 list-style: none;
             }
             .cninfo-watchlist-item {
@@ -205,10 +226,13 @@
                 align-items: center;
                 justify-content: space-between;
                 gap: 8px;
-                padding: 7px 2px;
-                border-bottom: 1px solid #f1f5f9;
+                padding: 8px 4px;
+                border-bottom: 1px solid #eef2f7;
             }
-            .cninfo-watchlist-item-info { min-width: 0; }
+            .cninfo-watchlist-item:last-child { border-bottom: 0; }
+            .cninfo-watchlist-item:hover { background: #f8fbff; }
+            .cninfo-watchlist-item-info { overflow: hidden; min-width: 0; }
+            .cninfo-watchlist-item-link { padding: 2px 4px; border-radius: 6px; }
             .cninfo-watchlist-item-link {
                 display: block;
                 min-width: 0;
@@ -229,14 +253,19 @@
             .cninfo-watchlist-item-code { color: #64748b; font-size: 12px; }
             .cninfo-watchlist-remove {
                 flex: 0 0 auto;
-                color: #64748b;
+                padding: 4px 6px;
+                color: #94a3b8;
                 background: transparent;
                 border: 0;
+                border-radius: 5px;
                 cursor: pointer;
             }
-            .cninfo-watchlist-remove:hover { color: #cf1322; }
-            .cninfo-watchlist-empty { padding: 12px 2px; color: #94a3b8; text-align: center; }
-            .cninfo-watchlist-footer { margin-top: 8px; color: #94a3b8; font-size: 12px; }
+            .cninfo-watchlist-remove:hover { color: #cf1322; background: #fff1f2; }
+            .cninfo-watchlist-empty { padding: 18px 2px; color: #94a3b8; text-align: center; }
+            .cninfo-watchlist-footer { margin: 9px 2px 0; color: #94a3b8; font-size: 11px; }
+            @media (max-width: 480px) {
+                #cninfo-watchlist { top: 12px; right: 12px; }
+            }
         `);
 
         const panel = document.createElement('section');
@@ -254,7 +283,16 @@
                     <ul class="cninfo-watchlist-suggestions" hidden></ul>
                 </form>
                 <div class="cninfo-watchlist-message" role="status"></div>
-                <input id="cninfo-watchlist-filter" placeholder="筛选自选股" autocomplete="off">
+                <div class="cninfo-watchlist-tools">
+                    <input id="cninfo-watchlist-filter" placeholder="筛选自选股" autocomplete="off">
+                    <select class="cninfo-watchlist-sort" aria-label="排序方式">
+                        <option value="added">添加顺序</option>
+                        <option value="name-asc">名称 A-Z</option>
+                        <option value="name-desc">名称 Z-A</option>
+                        <option value="code-asc">代码升序</option>
+                        <option value="code-desc">代码降序</option>
+                    </select>
+                </div>
                 <ul class="cninfo-watchlist-items"></ul>
                 <div class="cninfo-watchlist-footer">数据仅保存在当前浏览器</div>
             </div>
@@ -273,6 +311,7 @@
         const codeInput = form.querySelector('[name="code"]');
         const nameInput = form.querySelector('[name="name"]');
         const filterInput = $('#cninfo-watchlist-filter');
+        const sortSelect = $('.cninfo-watchlist-sort');
         const message = $('.cninfo-watchlist-message');
         const items = $('.cninfo-watchlist-items');
         const suggestions = $('.cninfo-watchlist-suggestions');
@@ -429,6 +468,14 @@
             const watchlist = getWatchlist().filter(item =>
                 item.code.toLowerCase().includes(filter) || item.name.toLowerCase().includes(filter)
             );
+            const sort = sortSelect.value;
+            if (sort !== 'added') {
+                const [field, direction] = sort.split('-');
+                watchlist.sort((left, right) => {
+                    const result = left[field].localeCompare(right[field], 'zh-CN', { numeric: true });
+                    return direction === 'desc' ? -result : result;
+                });
+            }
             if (watchlist.length === 0) {
                 const empty = document.createElement('li');
                 empty.className = 'cninfo-watchlist-empty';
@@ -484,6 +531,7 @@
         });
 
         filterInput.addEventListener('input', renderItems);
+        sortSelect.addEventListener('change', renderItems);
         $('[data-action="toggle"]').addEventListener('click', event => {
             panel.classList.toggle('is-collapsed');
             event.currentTarget.textContent = panel.classList.contains('is-collapsed') ? '+' : '−';
