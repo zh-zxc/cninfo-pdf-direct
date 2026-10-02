@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         巨潮资讯 PDF 直链打开 (支持港A股)
 // @namespace    http://tampermonkey.net/
-// @version      4.2.3
-// @updateURL https://cdn.jsdelivr.net/gh/zh_zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
-// @downloadURL https://cdn.jsdelivr.net/gh/zh_zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
+// @version      4.2.4
+// @updateURL https://cdn.jsdelivr.net/gh/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
+// @downloadURL https://cdn.jsdelivr.net/gh/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
 // @description  修复港股公告 announcementTime 含时间导致直链404的问题
-// @author       zh_zxc
+// @author       zh-zxc
 // @match        *://*.cninfo.com.cn/*
 // @icon         https://static.cninfo.com.cn/new/assets/image/logo.png
 // @grant        GM_openInTab
