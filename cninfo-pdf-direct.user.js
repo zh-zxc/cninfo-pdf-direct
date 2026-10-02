@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         巨潮资讯 PDF 直链打开 (支持港A股)
 // @namespace    http://tampermonkey.net/
-// @version      4.3.2
+// @version      4.3.4
 // @updateURL https://raw.githubusercontent.com/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
 // @downloadURL https://raw.githubusercontent.com/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
 // @description  PDF 直链打开和本地自选股
@@ -142,6 +142,16 @@
                 border-bottom: 1px solid #f1f5f9;
             }
             .cninfo-watchlist-item-info { min-width: 0; }
+            .cninfo-watchlist-item-link {
+                display: block;
+                min-width: 0;
+                color: inherit;
+                cursor: pointer;
+                text-decoration: none;
+            }
+            .cninfo-watchlist-item-link:hover .cninfo-watchlist-item-name {
+                color: #1677ff;
+            }
             .cninfo-watchlist-item-name {
                 display: block;
                 overflow: hidden;
@@ -170,8 +180,8 @@
             </div>
             <div class="cninfo-watchlist-body">
                 <form class="cninfo-watchlist-form">
-                    <input name="code" maxlength="10" placeholder="股票代码" autocomplete="off">
-                    <input name="name" maxlength="30" placeholder="股票名称" autocomplete="off">
+                    <input name="name" maxlength="30" placeholder="股票名称（必填）" autocomplete="off" required>
+                    <input name="code" maxlength="10" placeholder="股票代码（选填）" autocomplete="off">
                     <button type="submit">添加</button>
                 </form>
                 <div class="cninfo-watchlist-message" role="status"></div>
@@ -252,16 +262,25 @@
 
         function createWatchlistItem(item) {
             const row = element('li', 'cninfo-watchlist-item');
+            const link = element('a', 'cninfo-watchlist-item-link');
+            link.href = item.code
+                ? `https://www.cninfo.com.cn/new/disclosure/stock?stockCode=${encodeURIComponent(item.code)}`
+                : `https://www.cninfo.com.cn/new/fulltextSearch?keyWord=${encodeURIComponent(item.name)}`;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+
             const info = element('div', 'cninfo-watchlist-item-info');
             const name = element('span', 'cninfo-watchlist-item-name', item.name);
             name.title = item.name;
-            const code = element('span', 'cninfo-watchlist-item-code', item.code);
+            const code = element('span', 'cninfo-watchlist-item-code', item.code || '代码未填写');
             info.append(name, code);
+            link.append(info);
 
             const remove = element('button', 'cninfo-watchlist-remove', '删除');
             remove.type = 'button';
+            remove.dataset.name = item.name;
             remove.dataset.code = item.code;
-            row.append(info, remove);
+            row.append(link, remove);
             return row;
         }
 
@@ -284,7 +303,7 @@
             event.preventDefault();
             const code = codeInput.value.trim().toUpperCase();
             const name = nameInput.value.trim();
-            if (!/^[A-Z0-9.-]{1,10}$/.test(code)) {
+            if (code && !/^[A-Z0-9.-]{1,10}$/.test(code)) {
                 showMessage('请输入有效的股票代码');
                 codeInput.focus();
                 return;
@@ -295,21 +314,25 @@
                 return;
             }
             const watchlist = getWatchlist();
-            if (watchlist.some(item => item.code === code)) {
+            if (watchlist.some(item =>
+                item.name.toLowerCase() === name.toLowerCase() || (code && item.code === code)
+            )) {
                 showMessage('该股票已经在自选中');
                 return;
             }
             watchlist.push({ code, name });
             saveWatchlist(watchlist);
             form.reset();
-            codeInput.focus();
+            nameInput.focus();
             renderItems();
         });
 
         items.addEventListener('click', event => {
             const remove = event.target.closest('.cninfo-watchlist-remove');
             if (!remove) return;
-            saveWatchlist(getWatchlist().filter(item => item.code !== remove.dataset.code));
+            saveWatchlist(getWatchlist().filter(item =>
+                item.name !== remove.dataset.name || item.code !== remove.dataset.code
+            ));
             renderItems();
         });
 
