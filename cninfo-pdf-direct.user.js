@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         巨潮资讯 PDF 直链打开 (支持港A股)
 // @namespace    http://tampermonkey.net/
-// @version      4.3.1
+// @version      4.3.2
 // @updateURL https://raw.githubusercontent.com/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
 // @downloadURL https://raw.githubusercontent.com/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
 // @description  PDF 直链打开和本地自选股
@@ -188,13 +188,14 @@
             panel.style.right = 'auto';
         }
 
-        const header = panel.querySelector('.cninfo-watchlist-header');
-        const form = panel.querySelector('.cninfo-watchlist-form');
+        const $ = selector => panel.querySelector(selector);
+        const header = $('.cninfo-watchlist-header');
+        const form = $('.cninfo-watchlist-form');
         const codeInput = form.querySelector('[name="code"]');
         const nameInput = form.querySelector('[name="name"]');
-        const filterInput = panel.querySelector('#cninfo-watchlist-filter');
-        const message = panel.querySelector('.cninfo-watchlist-message');
-        const items = panel.querySelector('.cninfo-watchlist-items');
+        const filterInput = $('#cninfo-watchlist-filter');
+        const message = $('.cninfo-watchlist-message');
+        const items = $('.cninfo-watchlist-items');
 
         let dragState = null;
         header.addEventListener('pointerdown', event => {
@@ -242,42 +243,41 @@
             }, 2500);
         }
 
+        function element(tag, className, text) {
+            const node = document.createElement(tag);
+            node.className = className;
+            if (text !== undefined) node.textContent = text;
+            return node;
+        }
+
+        function createWatchlistItem(item) {
+            const row = element('li', 'cninfo-watchlist-item');
+            const info = element('div', 'cninfo-watchlist-item-info');
+            const name = element('span', 'cninfo-watchlist-item-name', item.name);
+            name.title = item.name;
+            const code = element('span', 'cninfo-watchlist-item-code', item.code);
+            info.append(name, code);
+
+            const remove = element('button', 'cninfo-watchlist-remove', '删除');
+            remove.type = 'button';
+            remove.dataset.code = item.code;
+            row.append(info, remove);
+            return row;
+        }
+
         function renderItems() {
             const filter = filterInput.value.trim().toLowerCase();
             const watchlist = getWatchlist().filter(item =>
                 item.code.toLowerCase().includes(filter) || item.name.toLowerCase().includes(filter)
             );
-            items.replaceChildren();
             if (watchlist.length === 0) {
                 const empty = document.createElement('li');
                 empty.className = 'cninfo-watchlist-empty';
                 empty.textContent = filter ? '没有匹配的自选股' : '暂未添加自选股';
-                items.appendChild(empty);
+                items.replaceChildren(empty);
                 return;
             }
-
-            watchlist.forEach(item => {
-                const row = document.createElement('li');
-                row.className = 'cninfo-watchlist-item';
-                const info = document.createElement('div');
-                info.className = 'cninfo-watchlist-item-info';
-                const name = document.createElement('span');
-                name.className = 'cninfo-watchlist-item-name';
-                name.textContent = item.name;
-                name.title = item.name;
-                const code = document.createElement('span');
-                code.className = 'cninfo-watchlist-item-code';
-                code.textContent = item.code;
-                info.append(name, code);
-
-                const remove = document.createElement('button');
-                remove.type = 'button';
-                remove.className = 'cninfo-watchlist-remove';
-                remove.dataset.code = item.code;
-                remove.textContent = '删除';
-                row.append(info, remove);
-                items.appendChild(row);
-            });
+            items.replaceChildren(...watchlist.map(createWatchlistItem));
         }
 
         form.addEventListener('submit', event => {
@@ -314,7 +314,7 @@
         });
 
         filterInput.addEventListener('input', renderItems);
-        panel.querySelector('[data-action="toggle"]').addEventListener('click', event => {
+        $('[data-action="toggle"]').addEventListener('click', event => {
             panel.classList.toggle('is-collapsed');
             event.currentTarget.textContent = panel.classList.contains('is-collapsed') ? '+' : '−';
             event.currentTarget.title = panel.classList.contains('is-collapsed') ? '展开' : '收起';
