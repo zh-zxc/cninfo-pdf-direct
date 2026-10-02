@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         巨潮资讯 PDF 直链打开 (支持港A股)
 // @namespace    http://tampermonkey.net/
-// @version      4.3.0
+// @version      4.3.1
 // @updateURL https://raw.githubusercontent.com/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
 // @downloadURL https://raw.githubusercontent.com/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
 // @description  PDF 直链打开和本地自选股
@@ -38,6 +38,7 @@
     }
 
     const WATCHLIST_KEY = 'cninfo-pdf-direct-watchlist';
+    const WATCHLIST_POSITION_KEY = 'cninfo-pdf-direct-watchlist-position';
 
     function getWatchlist() {
         const value = GM_getValue(WATCHLIST_KEY, []);
@@ -47,6 +48,14 @@
 
     function saveWatchlist(watchlist) {
         GM_setValue(WATCHLIST_KEY, watchlist);
+    }
+
+    function getWatchlistPosition() {
+        const position = GM_getValue(WATCHLIST_POSITION_KEY, null);
+        if (!position || !Number.isFinite(position.left) || !Number.isFinite(position.top)) {
+            return null;
+        }
+        return position;
     }
 
     function createWatchlistPanel() {
@@ -76,6 +85,11 @@
                 background: #1677ff;
                 border-radius: 8px 8px 0 0;
                 font-weight: 600;
+                cursor: grab;
+                user-select: none;
+            }
+            .cninfo-watchlist-header.is-dragging {
+                cursor: grabbing;
             }
             .cninfo-watchlist-header button {
                 padding: 0 4px;
@@ -167,13 +181,59 @@
             </div>
         `;
         document.body.appendChild(panel);
+        const savedPosition = getWatchlistPosition();
+        if (savedPosition) {
+            panel.style.left = `${savedPosition.left}px`;
+            panel.style.top = `${savedPosition.top}px`;
+            panel.style.right = 'auto';
+        }
 
+        const header = panel.querySelector('.cninfo-watchlist-header');
         const form = panel.querySelector('.cninfo-watchlist-form');
         const codeInput = form.querySelector('[name="code"]');
         const nameInput = form.querySelector('[name="name"]');
         const filterInput = panel.querySelector('#cninfo-watchlist-filter');
         const message = panel.querySelector('.cninfo-watchlist-message');
         const items = panel.querySelector('.cninfo-watchlist-items');
+
+        let dragState = null;
+        header.addEventListener('pointerdown', event => {
+            if (event.target.closest('button')) return;
+            const rect = panel.getBoundingClientRect();
+            dragState = {
+                offsetX: event.clientX - rect.left,
+                offsetY: event.clientY - rect.top
+            };
+            panel.style.left = `${rect.left}px`;
+            panel.style.top = `${rect.top}px`;
+            panel.style.right = 'auto';
+            header.classList.add('is-dragging');
+            header.setPointerCapture(event.pointerId);
+        });
+
+        header.addEventListener('pointermove', event => {
+            if (!dragState) return;
+            const maxLeft = Math.max(0, window.innerWidth - panel.offsetWidth);
+            const maxTop = Math.max(0, window.innerHeight - panel.offsetHeight);
+            const left = Math.min(maxLeft, Math.max(0, event.clientX - dragState.offsetX));
+            const top = Math.min(maxTop, Math.max(0, event.clientY - dragState.offsetY));
+            panel.style.left = `${left}px`;
+            panel.style.top = `${top}px`;
+        });
+
+        function finishDragging(event) {
+            if (!dragState) return;
+            const rect = panel.getBoundingClientRect();
+            GM_setValue(WATCHLIST_POSITION_KEY, { left: rect.left, top: rect.top });
+            dragState = null;
+            header.classList.remove('is-dragging');
+            if (header.hasPointerCapture(event.pointerId)) {
+                header.releasePointerCapture(event.pointerId);
+            }
+        }
+
+        header.addEventListener('pointerup', finishDragging);
+        header.addEventListener('pointercancel', finishDragging);
 
         function showMessage(text) {
             message.textContent = text;
