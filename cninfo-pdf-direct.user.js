@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         巨潮资讯 PDF 直链打开 (支持港A股)
 // @namespace    http://tampermonkey.net/
-// @version      4.5.0
+// @version      4.6.0
 // @updateURL https://raw.githubusercontent.com/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
 // @downloadURL https://raw.githubusercontent.com/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
 // @description  PDF 直链打开和本地自选股
@@ -194,17 +194,8 @@
             }
             .cninfo-watchlist-suggestion:hover { background: #eff6ff; }
             .cninfo-watchlist-suggestion-code { color: #64748b; font-size: 12px; }
-            .cninfo-watchlist-tools { display: flex; gap: 7px; margin-top: 10px; }
-            #cninfo-watchlist-filter { flex: 1; width: 0; margin: 0; }
-            .cninfo-watchlist-sort {
-                width: 105px;
-                padding: 8px 6px;
-                color: #334155;
-                background: #fff;
-                border: 1px solid #d5deea;
-                border-radius: 8px;
-                font: inherit;
-            }
+            .cninfo-watchlist-tools { margin-top: 10px; }
+            #cninfo-watchlist-filter { width: 100%; margin: 0; }
             .cninfo-watchlist-message {
                 min-height: 20px;
                 margin: 5px 2px 0;
@@ -261,6 +252,21 @@
                 cursor: pointer;
             }
             .cninfo-watchlist-remove:hover { color: #cf1322; background: #fff1f2; }
+            .cninfo-watchlist-item-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; }
+            .cninfo-watchlist-move {
+                width: 24px;
+                height: 24px;
+                padding: 0;
+                color: #64748b;
+                background: transparent;
+                border: 0;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 12px;
+                line-height: 1;
+            }
+            .cninfo-watchlist-move:hover:not(:disabled) { color: #1769e0; background: #eff6ff; }
+            .cninfo-watchlist-move:disabled { color: #cbd5e1; cursor: default; }
             .cninfo-watchlist-empty { padding: 18px 2px; color: #94a3b8; text-align: center; }
             .cninfo-watchlist-footer { margin: 9px 2px 0; color: #94a3b8; font-size: 11px; }
             @media (max-width: 480px) {
@@ -285,13 +291,6 @@
                 <div class="cninfo-watchlist-message" role="status"></div>
                 <div class="cninfo-watchlist-tools">
                     <input id="cninfo-watchlist-filter" placeholder="筛选自选股" autocomplete="off">
-                    <select class="cninfo-watchlist-sort" aria-label="排序方式">
-                        <option value="added">添加顺序</option>
-                        <option value="name-asc">名称 A-Z</option>
-                        <option value="name-desc">名称 Z-A</option>
-                        <option value="code-asc">代码升序</option>
-                        <option value="code-desc">代码降序</option>
-                    </select>
                 </div>
                 <ul class="cninfo-watchlist-items"></ul>
                 <div class="cninfo-watchlist-footer">数据仅保存在当前浏览器</div>
@@ -311,7 +310,6 @@
         const codeInput = form.querySelector('[name="code"]');
         const nameInput = form.querySelector('[name="name"]');
         const filterInput = $('#cninfo-watchlist-filter');
-        const sortSelect = $('.cninfo-watchlist-sort');
         const message = $('.cninfo-watchlist-message');
         const items = $('.cninfo-watchlist-items');
         const suggestions = $('.cninfo-watchlist-suggestions');
@@ -438,8 +436,10 @@
             return node;
         }
 
-        function createWatchlistItem(item) {
+        function createWatchlistItem(item, index, count) {
             const row = element('li', 'cninfo-watchlist-item');
+            row.dataset.name = item.name;
+            row.dataset.code = item.code;
             const link = element('a', 'cninfo-watchlist-item-link');
             link.href = '#';
             link.dataset.name = item.name;
@@ -455,11 +455,25 @@
             info.append(name, code);
             link.append(info);
 
+            const actions = element('div', 'cninfo-watchlist-item-actions');
+            const moveUp = element('button', 'cninfo-watchlist-move', '▲');
+            moveUp.type = 'button';
+            moveUp.title = '上移';
+            moveUp.ariaLabel = `上移${item.name}`;
+            moveUp.dataset.action = 'move-up';
+            moveUp.disabled = index === 0;
+            const moveDown = element('button', 'cninfo-watchlist-move', '▼');
+            moveDown.type = 'button';
+            moveDown.title = '下移';
+            moveDown.ariaLabel = `下移${item.name}`;
+            moveDown.dataset.action = 'move-down';
+            moveDown.disabled = index === count - 1;
             const remove = element('button', 'cninfo-watchlist-remove', '删除');
             remove.type = 'button';
             remove.dataset.name = item.name;
             remove.dataset.code = item.code;
-            row.append(link, remove);
+            actions.append(moveUp, moveDown, remove);
+            row.append(link, actions);
             return row;
         }
 
@@ -468,14 +482,6 @@
             const watchlist = getWatchlist().filter(item =>
                 item.code.toLowerCase().includes(filter) || item.name.toLowerCase().includes(filter)
             );
-            const sort = sortSelect.value;
-            if (sort !== 'added') {
-                const [field, direction] = sort.split('-');
-                watchlist.sort((left, right) => {
-                    const result = left[field].localeCompare(right[field], 'zh-CN', { numeric: true });
-                    return direction === 'desc' ? -result : result;
-                });
-            }
             if (watchlist.length === 0) {
                 const empty = document.createElement('li');
                 empty.className = 'cninfo-watchlist-empty';
@@ -483,7 +489,28 @@
                 items.replaceChildren(empty);
                 return;
             }
-            items.replaceChildren(...watchlist.map(createWatchlistItem));
+            items.replaceChildren(...watchlist.map((item, index) =>
+                createWatchlistItem(item, index, watchlist.length)
+            ));
+        }
+
+        function moveWatchlistItem(row, direction) {
+            const watchlist = getWatchlist();
+            const visibleItems = [...items.querySelectorAll('.cninfo-watchlist-item')];
+            const visibleIndex = visibleItems.indexOf(row);
+            const targetIndex = visibleIndex + direction;
+            if (visibleIndex < 0 || targetIndex < 0 || targetIndex >= visibleItems.length) return;
+            const currentIndex = watchlist.findIndex(item =>
+                item.name === row.dataset.name && item.code === row.dataset.code
+            );
+            const targetItem = visibleItems[targetIndex];
+            const otherIndex = watchlist.findIndex(item =>
+                item.name === targetItem.dataset.name && item.code === targetItem.dataset.code
+            );
+            if (currentIndex < 0 || otherIndex < 0) return;
+            [watchlist[currentIndex], watchlist[otherIndex]] = [watchlist[otherIndex], watchlist[currentIndex]];
+            saveWatchlist(watchlist);
+            renderItems();
         }
 
         form.addEventListener('submit', event => {
@@ -516,6 +543,12 @@
         });
 
         items.addEventListener('click', event => {
+            const row = event.target.closest('.cninfo-watchlist-item');
+            const move = event.target.closest('.cninfo-watchlist-move');
+            if (row && move) {
+                moveWatchlistItem(row, move.dataset.action === 'move-up' ? -1 : 1);
+                return;
+            }
             const link = event.target.closest('.cninfo-watchlist-item-link');
             if (link) {
                 event.preventDefault();
@@ -531,7 +564,6 @@
         });
 
         filterInput.addEventListener('input', renderItems);
-        sortSelect.addEventListener('change', renderItems);
         $('[data-action="toggle"]').addEventListener('click', event => {
             panel.classList.toggle('is-collapsed');
             event.currentTarget.textContent = panel.classList.contains('is-collapsed') ? '+' : '−';
