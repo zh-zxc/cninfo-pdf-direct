@@ -1,14 +1,17 @@
 // ==UserScript==
 // @name         巨潮资讯 PDF 直链打开 (支持港A股)
 // @namespace    http://tampermonkey.net/
-// @version      4.2.5
+// @version      4.3.0
 // @updateURL https://raw.githubusercontent.com/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
 // @downloadURL https://raw.githubusercontent.com/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
-// @description  修复链接一直重定向问题
+// @description  PDF 直链打开和本地自选股
 // @author       zh-zxc
 // @match        *://*.cninfo.com.cn/*
 // @icon         https://static.cninfo.com.cn/new/assets/image/logo.png
 // @grant        GM_openInTab
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_addStyle
 // ==/UserScript==
 
 (function() {
@@ -32,6 +35,231 @@
             console.log('[巨潮PDF直链] URL解析失败:', e);
         }
         return null;
+    }
+
+    const WATCHLIST_KEY = 'cninfo-pdf-direct-watchlist';
+
+    function getWatchlist() {
+        const value = GM_getValue(WATCHLIST_KEY, []);
+        if (!Array.isArray(value)) return [];
+        return value.filter(item => item && typeof item.code === 'string' && typeof item.name === 'string');
+    }
+
+    function saveWatchlist(watchlist) {
+        GM_setValue(WATCHLIST_KEY, watchlist);
+    }
+
+    function createWatchlistPanel() {
+        if (window.location.hostname !== 'www.cninfo.com.cn') return;
+
+        GM_addStyle(`
+            #cninfo-watchlist {
+                position: fixed;
+                top: 72px;
+                right: 20px;
+                z-index: 2147483647;
+                width: 280px;
+                color: #1f2937;
+                background: #fff;
+                border: 1px solid #dbe3ef;
+                border-radius: 8px;
+                box-shadow: 0 6px 24px rgba(15, 23, 42, .16);
+                font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            }
+            #cninfo-watchlist.is-collapsed .cninfo-watchlist-body { display: none; }
+            .cninfo-watchlist-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 10px 12px;
+                color: #fff;
+                background: #1677ff;
+                border-radius: 8px 8px 0 0;
+                font-weight: 600;
+            }
+            .cninfo-watchlist-header button {
+                padding: 0 4px;
+                color: #fff;
+                background: transparent;
+                border: 0;
+                cursor: pointer;
+                font-size: 18px;
+                line-height: 1;
+            }
+            .cninfo-watchlist-body { padding: 10px; }
+            .cninfo-watchlist-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
+            .cninfo-watchlist-form input, #cninfo-watchlist-filter {
+                box-sizing: border-box;
+                min-width: 0;
+                padding: 6px 8px;
+                border: 1px solid #cbd5e1;
+                border-radius: 4px;
+                font: inherit;
+            }
+            .cninfo-watchlist-form button {
+                padding: 0 10px;
+                color: #fff;
+                background: #1677ff;
+                border: 0;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+            .cninfo-watchlist-form button:hover { background: #0958d9; }
+            #cninfo-watchlist-filter { width: 100%; margin-top: 8px; }
+            .cninfo-watchlist-message {
+                min-height: 20px;
+                margin: 5px 0 0;
+                color: #cf1322;
+                font-size: 12px;
+            }
+            .cninfo-watchlist-items {
+                max-height: 260px;
+                margin: 2px 0 0;
+                padding: 0;
+                overflow-y: auto;
+                list-style: none;
+            }
+            .cninfo-watchlist-item {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 8px;
+                padding: 7px 2px;
+                border-bottom: 1px solid #f1f5f9;
+            }
+            .cninfo-watchlist-item-info { min-width: 0; }
+            .cninfo-watchlist-item-name {
+                display: block;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .cninfo-watchlist-item-code { color: #64748b; font-size: 12px; }
+            .cninfo-watchlist-remove {
+                flex: 0 0 auto;
+                color: #64748b;
+                background: transparent;
+                border: 0;
+                cursor: pointer;
+            }
+            .cninfo-watchlist-remove:hover { color: #cf1322; }
+            .cninfo-watchlist-empty { padding: 12px 2px; color: #94a3b8; text-align: center; }
+            .cninfo-watchlist-footer { margin-top: 8px; color: #94a3b8; font-size: 12px; }
+        `);
+
+        const panel = document.createElement('section');
+        panel.id = 'cninfo-watchlist';
+        panel.innerHTML = `
+            <div class="cninfo-watchlist-header">
+                <span>我的自选股</span>
+                <button type="button" data-action="toggle" title="收起">−</button>
+            </div>
+            <div class="cninfo-watchlist-body">
+                <form class="cninfo-watchlist-form">
+                    <input name="code" maxlength="10" placeholder="股票代码" autocomplete="off">
+                    <input name="name" maxlength="30" placeholder="股票名称" autocomplete="off">
+                    <button type="submit">添加</button>
+                </form>
+                <div class="cninfo-watchlist-message" role="status"></div>
+                <input id="cninfo-watchlist-filter" placeholder="筛选自选股" autocomplete="off">
+                <ul class="cninfo-watchlist-items"></ul>
+                <div class="cninfo-watchlist-footer">数据仅保存在当前浏览器</div>
+            </div>
+        `;
+        document.body.appendChild(panel);
+
+        const form = panel.querySelector('.cninfo-watchlist-form');
+        const codeInput = form.querySelector('[name="code"]');
+        const nameInput = form.querySelector('[name="name"]');
+        const filterInput = panel.querySelector('#cninfo-watchlist-filter');
+        const message = panel.querySelector('.cninfo-watchlist-message');
+        const items = panel.querySelector('.cninfo-watchlist-items');
+
+        function showMessage(text) {
+            message.textContent = text;
+            window.setTimeout(() => {
+                if (message.textContent === text) message.textContent = '';
+            }, 2500);
+        }
+
+        function renderItems() {
+            const filter = filterInput.value.trim().toLowerCase();
+            const watchlist = getWatchlist().filter(item =>
+                item.code.toLowerCase().includes(filter) || item.name.toLowerCase().includes(filter)
+            );
+            items.replaceChildren();
+            if (watchlist.length === 0) {
+                const empty = document.createElement('li');
+                empty.className = 'cninfo-watchlist-empty';
+                empty.textContent = filter ? '没有匹配的自选股' : '暂未添加自选股';
+                items.appendChild(empty);
+                return;
+            }
+
+            watchlist.forEach(item => {
+                const row = document.createElement('li');
+                row.className = 'cninfo-watchlist-item';
+                const info = document.createElement('div');
+                info.className = 'cninfo-watchlist-item-info';
+                const name = document.createElement('span');
+                name.className = 'cninfo-watchlist-item-name';
+                name.textContent = item.name;
+                name.title = item.name;
+                const code = document.createElement('span');
+                code.className = 'cninfo-watchlist-item-code';
+                code.textContent = item.code;
+                info.append(name, code);
+
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'cninfo-watchlist-remove';
+                remove.dataset.code = item.code;
+                remove.textContent = '删除';
+                row.append(info, remove);
+                items.appendChild(row);
+            });
+        }
+
+        form.addEventListener('submit', event => {
+            event.preventDefault();
+            const code = codeInput.value.trim().toUpperCase();
+            const name = nameInput.value.trim();
+            if (!/^[A-Z0-9.-]{1,10}$/.test(code)) {
+                showMessage('请输入有效的股票代码');
+                codeInput.focus();
+                return;
+            }
+            if (!name) {
+                showMessage('请输入股票名称');
+                nameInput.focus();
+                return;
+            }
+            const watchlist = getWatchlist();
+            if (watchlist.some(item => item.code === code)) {
+                showMessage('该股票已经在自选中');
+                return;
+            }
+            watchlist.push({ code, name });
+            saveWatchlist(watchlist);
+            form.reset();
+            codeInput.focus();
+            renderItems();
+        });
+
+        items.addEventListener('click', event => {
+            const remove = event.target.closest('.cninfo-watchlist-remove');
+            if (!remove) return;
+            saveWatchlist(getWatchlist().filter(item => item.code !== remove.dataset.code));
+            renderItems();
+        });
+
+        filterInput.addEventListener('input', renderItems);
+        panel.querySelector('[data-action="toggle"]').addEventListener('click', event => {
+            panel.classList.toggle('is-collapsed');
+            event.currentTarget.textContent = panel.classList.contains('is-collapsed') ? '+' : '−';
+            event.currentTarget.title = panel.classList.contains('is-collapsed') ? '展开' : '收起';
+        });
+        renderItems();
     }
 
     // 场景一：列表页点击拦截
@@ -62,4 +290,6 @@
             GM_openInTab(pdfUrl, { active: true });
         }
     }
+
+    createWatchlistPanel();
 })();
