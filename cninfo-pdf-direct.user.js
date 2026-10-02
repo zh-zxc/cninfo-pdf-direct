@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         巨潮资讯 PDF 直链打开 (支持港A股)
 // @namespace    http://tampermonkey.net/
-// @version      4.3.4
+// @version      4.4.0
 // @updateURL https://raw.githubusercontent.com/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
 // @downloadURL https://raw.githubusercontent.com/zh-zxc/cninfo-pdf-direct/main/cninfo-pdf-direct.user.js
 // @description  PDF 直链打开和本地自选股
@@ -37,25 +37,60 @@
         return null;
     }
 
-    const WATCHLIST_KEY = 'cninfo-pdf-direct-watchlist';
-    const WATCHLIST_POSITION_KEY = 'cninfo-pdf-direct-watchlist-position';
+    const STORAGE = {
+        watchlist: 'cninfo-pdf-direct-watchlist',
+        position: 'cninfo-pdf-direct-watchlist-position'
+    };
+    const CNINFO = {
+        api: '/new/information/topSearch/query',
+        stockPath: '/new/disclosure/stock'
+    };
 
     function getWatchlist() {
-        const value = GM_getValue(WATCHLIST_KEY, []);
+        const value = GM_getValue(STORAGE.watchlist, []);
         if (!Array.isArray(value)) return [];
-        return value.filter(item => item && typeof item.code === 'string' && typeof item.name === 'string');
+        return value.filter(item =>
+            item && typeof item.code === 'string' && typeof item.name === 'string'
+        );
     }
 
     function saveWatchlist(watchlist) {
-        GM_setValue(WATCHLIST_KEY, watchlist);
+        GM_setValue(STORAGE.watchlist, watchlist);
     }
 
     function getWatchlistPosition() {
-        const position = GM_getValue(WATCHLIST_POSITION_KEY, null);
+        const position = GM_getValue(STORAGE.position, null);
         if (!position || !Number.isFinite(position.left) || !Number.isFinite(position.top)) {
             return null;
         }
         return position;
+    }
+
+    async function searchStocks(keyword, signal) {
+        const params = new URLSearchParams({ keyWord: keyword, maxNum: '10' });
+        const response = await fetch(`${CNINFO.api}?${params}`, {
+            method: 'POST',
+            signal
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const results = await response.json();
+        return Array.isArray(results) ? results : [];
+    }
+
+    function findStock(results, code, name) {
+        return results.find(item =>
+            (code && (item.code === code || item.secCode === code)) ||
+            (!code && item.zwjc === name)
+        );
+    }
+
+    function buildStockDetailUrl(stock) {
+        const url = new URL(CNINFO.stockPath, window.location.origin);
+        url.searchParams.set('tabName', 'data');
+        url.searchParams.set('stockCode', stock.code);
+        url.searchParams.set('orgId', stock.orgId);
+        url.hash = 'latestAnnouncement';
+        return url.href;
     }
 
     function createWatchlistPanel() {
@@ -101,7 +136,7 @@
                 line-height: 1;
             }
             .cninfo-watchlist-body { padding: 10px; }
-            .cninfo-watchlist-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
+            .cninfo-watchlist-form { position: relative; display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
             .cninfo-watchlist-form input, #cninfo-watchlist-filter {
                 box-sizing: border-box;
                 min-width: 0;
@@ -119,6 +154,38 @@
                 cursor: pointer;
             }
             .cninfo-watchlist-form button:hover { background: #0958d9; }
+            .cninfo-watchlist-suggestions {
+                position: absolute;
+                top: 35px;
+                left: 0;
+                z-index: 1;
+                width: calc(50% - 3px);
+                max-height: 220px;
+                margin: 0;
+                padding: 4px 0;
+                overflow-y: auto;
+                background: #fff;
+                border: 1px solid #cbd5e1;
+                border-radius: 4px;
+                box-shadow: 0 4px 12px rgba(15, 23, 42, .14);
+                list-style: none;
+            }
+            .cninfo-watchlist-suggestions[hidden] { display: none; }
+            .cninfo-watchlist-suggestion {
+                display: flex;
+                justify-content: space-between;
+                gap: 8px;
+                width: 100%;
+                padding: 7px 8px;
+                color: #1f2937;
+                background: #fff;
+                border: 0;
+                cursor: pointer;
+                font: inherit;
+                text-align: left;
+            }
+            .cninfo-watchlist-suggestion:hover { background: #eff6ff; }
+            .cninfo-watchlist-suggestion-code { color: #64748b; font-size: 12px; }
             #cninfo-watchlist-filter { width: 100%; margin-top: 8px; }
             .cninfo-watchlist-message {
                 min-height: 20px;
@@ -152,6 +219,7 @@
             .cninfo-watchlist-item-link:hover .cninfo-watchlist-item-name {
                 color: #1677ff;
             }
+            .cninfo-watchlist-item-link.is-loading { opacity: .6; }
             .cninfo-watchlist-item-name {
                 display: block;
                 overflow: hidden;
@@ -183,6 +251,7 @@
                     <input name="name" maxlength="30" placeholder="股票名称（必填）" autocomplete="off" required>
                     <input name="code" maxlength="10" placeholder="股票代码（选填）" autocomplete="off">
                     <button type="submit">添加</button>
+                    <ul class="cninfo-watchlist-suggestions" hidden></ul>
                 </form>
                 <div class="cninfo-watchlist-message" role="status"></div>
                 <input id="cninfo-watchlist-filter" placeholder="筛选自选股" autocomplete="off">
@@ -206,6 +275,10 @@
         const filterInput = $('#cninfo-watchlist-filter');
         const message = $('.cninfo-watchlist-message');
         const items = $('.cninfo-watchlist-items');
+        const suggestions = $('.cninfo-watchlist-suggestions');
+        let searchTimer = null;
+        let searchController = null;
+        let selectedOrgId = '';
 
         let dragState = null;
         header.addEventListener('pointerdown', event => {
@@ -235,7 +308,7 @@
         function finishDragging(event) {
             if (!dragState) return;
             const rect = panel.getBoundingClientRect();
-            GM_setValue(WATCHLIST_POSITION_KEY, { left: rect.left, top: rect.top });
+            GM_setValue(STORAGE.position, { left: rect.left, top: rect.top });
             dragState = null;
             header.classList.remove('is-dragging');
             if (header.hasPointerCapture(event.pointerId)) {
@@ -253,6 +326,72 @@
             }, 2500);
         }
 
+        function hideSuggestions() {
+            suggestions.replaceChildren();
+            suggestions.hidden = true;
+        }
+
+        function renderSuggestions(results) {
+            const matches = results.filter(item => item && item.code && item.orgId && item.zwjc).slice(0, 8);
+            suggestions.replaceChildren(...matches.map(item => {
+                const option = element('li', '');
+                const button = element('button', 'cninfo-watchlist-suggestion');
+                button.type = 'button';
+                button.dataset.name = item.zwjc;
+                button.dataset.code = item.code;
+                button.dataset.orgId = item.orgId;
+                const name = element('span', '', item.zwjc);
+                const code = element('span', 'cninfo-watchlist-suggestion-code', item.code);
+                option.append(button);
+                button.append(name, code);
+                return option;
+            }));
+            suggestions.hidden = matches.length === 0;
+        }
+
+        async function searchSuggestions(value) {
+            if (searchController) searchController.abort();
+            searchController = new AbortController();
+            try {
+                renderSuggestions(await searchStocks(value, searchController.signal));
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.log('[巨潮PDF直链] 自选股搜索失败:', error);
+                    hideSuggestions();
+                }
+            }
+        }
+
+        nameInput.addEventListener('input', () => {
+            const value = nameInput.value.trim();
+            codeInput.value = '';
+            selectedOrgId = '';
+            if (searchTimer) window.clearTimeout(searchTimer);
+            if (value.length < 1) {
+                hideSuggestions();
+                return;
+            }
+            searchTimer = window.setTimeout(() => searchSuggestions(value), 250);
+        });
+
+        codeInput.addEventListener('input', () => {
+            selectedOrgId = '';
+        });
+
+        suggestions.addEventListener('click', event => {
+            const option = event.target.closest('.cninfo-watchlist-suggestion');
+            if (!option) return;
+            nameInput.value = option.dataset.name;
+            codeInput.value = option.dataset.code;
+            selectedOrgId = option.dataset.orgId;
+            hideSuggestions();
+            codeInput.focus();
+        });
+
+        document.addEventListener('click', event => {
+            if (!form.contains(event.target)) hideSuggestions();
+        });
+
         function element(tag, className, text) {
             const node = document.createElement(tag);
             node.className = className;
@@ -263,9 +402,10 @@
         function createWatchlistItem(item) {
             const row = element('li', 'cninfo-watchlist-item');
             const link = element('a', 'cninfo-watchlist-item-link');
-            link.href = item.code
-                ? `https://www.cninfo.com.cn/new/disclosure/stock?stockCode=${encodeURIComponent(item.code)}`
-                : `https://www.cninfo.com.cn/new/fulltextSearch?keyWord=${encodeURIComponent(item.name)}`;
+            link.href = '#';
+            link.dataset.name = item.name;
+            link.dataset.code = item.code;
+            link.dataset.orgId = item.orgId || '';
             link.target = '_blank';
             link.rel = 'noopener noreferrer';
 
@@ -320,14 +460,21 @@
                 showMessage('该股票已经在自选中');
                 return;
             }
-            watchlist.push({ code, name });
+            watchlist.push({ code, name, orgId: selectedOrgId });
             saveWatchlist(watchlist);
             form.reset();
+            selectedOrgId = '';
             nameInput.focus();
             renderItems();
         });
 
         items.addEventListener('click', event => {
+            const link = event.target.closest('.cninfo-watchlist-item-link');
+            if (link) {
+                event.preventDefault();
+                openStockDetail(link);
+                return;
+            }
             const remove = event.target.closest('.cninfo-watchlist-remove');
             if (!remove) return;
             saveWatchlist(getWatchlist().filter(item =>
@@ -343,6 +490,29 @@
             event.currentTarget.title = panel.classList.contains('is-collapsed') ? '展开' : '收起';
         });
         renderItems();
+    }
+
+    async function openStockDetail(link) {
+        if (link.classList.contains('is-loading')) return;
+        link.classList.add('is-loading');
+        try {
+            let result = link.dataset.orgId
+                ? { code: link.dataset.code, orgId: link.dataset.orgId }
+                : null;
+            if (!result) {
+                const results = await searchStocks(link.dataset.code || link.dataset.name);
+                result = findStock(results, link.dataset.code, link.dataset.name);
+            }
+            if (!result || !result.code || !result.orgId) {
+                throw new Error('未找到对应上市公司');
+            }
+            GM_openInTab(buildStockDetailUrl(result), { active: true });
+        } catch (error) {
+            console.log('[巨潮PDF直链] 自选股详情解析失败:', error);
+            window.alert('未找到该股票的详情信息，请检查股票名称或代码');
+        } finally {
+            link.classList.remove('is-loading');
+        }
     }
 
     // 场景一：列表页点击拦截
